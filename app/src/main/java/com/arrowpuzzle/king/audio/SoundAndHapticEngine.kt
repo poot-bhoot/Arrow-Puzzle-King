@@ -12,6 +12,7 @@ import kotlin.concurrent.thread
 import kotlin.math.PI
 import kotlin.math.exp
 import kotlin.math.sin
+import kotlin.random.Random
 
 class SoundAndHapticEngine(private val context: Context) {
 
@@ -30,90 +31,138 @@ class SoundAndHapticEngine(private val context: Context) {
         }
     }
 
+    /** Tactile wooden/glass micro-click for UI & Store interactions */
     fun playTap() {
-        triggerHaptic(18L, 80)
+        vibrateOneShot(22L, 120)
         if (!soundEnabled) return
-        playGeneratedPcm(durationSec = 0.055) { t ->
-            val env = exp(-t * 65.0)
-            val freq = 620.0 + 380.0 * exp(-t * 80.0)
-            sin(2.0 * PI * freq * t) * env * 0.45
+        playGeneratedPcm(durationSec = 0.065) { t ->
+            val env = exp(-t * 68.0)
+            val fundamental = sin(2.0 * PI * 740.0 * t)
+            val overtone = sin(2.0 * PI * 1480.0 * t) * 0.35
+            val bodyThump = sin(2.0 * PI * 210.0 * t) * exp(-t * 110.0) * 0.45
+            (fundamental * 0.55 + overtone + bodyThump) * env * 0.50
         }
     }
 
-    fun playWhooshEscape() {
-        triggerHaptic(32L, 140)
+    /** Crisp silk-glide whoosh + harmonic marimba chime when arrow uncoils along its path */
+    fun playWhooshEscape(comboCount: Int = 1) {
+        // Double-pulse kinetic vibration that mimics an arrow zipping out
+        vibrateWaveform(longArrayOf(0, 22, 28, 35), intArrayOf(0, 140, 0, 210))
         if (!soundEnabled) return
-        playGeneratedPcm(durationSec = 0.22) { t ->
-            // Smooth rising harmonic chime + airy slide
-            val env = sin(PI * (t / 0.22)).coerceIn(0.0, 1.0) * exp(-t * 5.5)
-            val freq1 = 440.0 + (t / 0.22) * 520.0
-            val freq2 = freq1 * 1.5
-            (sin(2.0 * PI * freq1 * t) * 0.55 + sin(2.0 * PI * freq2 * t) * 0.25) * env * 0.55
+
+        val pitchBoost = (comboCount.coerceIn(1, 8) - 1) * 38.0
+        val rng = Random(comboCount * 31)
+
+        playGeneratedPcm(durationSec = 0.28) { t ->
+            val norm = (t / 0.28).coerceIn(0.0, 1.0)
+            // Smooth airy whoosh (filtered noise + rising sine)
+            val airEnv = sin(PI * norm) * exp(-t * 4.5)
+            val airNoise = (rng.nextDouble() * 2.0 - 1.0) * 0.14 * airEnv
+
+            // Warm marimba-bell glide
+            val chimeEnv = exp(-t * 11.0)
+            val baseFreq = 480.0 + pitchBoost + norm * 420.0
+            val chime = sin(2.0 * PI * baseFreq * t) * 0.55 +
+                sin(2.0 * PI * (baseFreq * 1.5) * t) * 0.25 +
+                sin(2.0 * PI * (baseFreq * 2.0) * t) * 0.12
+
+            (chime * chimeEnv + airNoise) * 0.62
         }
     }
 
+    /** Heavy rubber-bumper double thud when arrow head hits a blocker */
     fun playBlockedCollision() {
-        triggerHaptic(75L, 230)
+        // Strong double-impact vibration
+        vibrateWaveform(longArrayOf(0, 55, 45, 85), intArrayOf(0, 230, 0, 255))
         if (!soundEnabled) return
-        playGeneratedPcm(durationSec = 0.20) { t ->
-            // Low double-thud warning buzz
-            val pulse = if (t < 0.08) 1.0 else if (t > 0.10) 0.85 else 0.15
-            val env = exp(-t * 14.0) * pulse
-            val freq = 155.0 - t * 140.0
-            val wave = sin(2.0 * PI * freq * t) + 0.35 * sin(2.0 * PI * freq * 2.0 * t)
-            wave * env * 0.65
+
+        playGeneratedPcm(durationSec = 0.24) { t ->
+            val hit1 = exp(-t * 28.0)
+            val hit2 = if (t >= 0.085) exp(-(t - 0.085) * 24.0) * 0.9 else 0.0
+            val env = hit1 + hit2
+            val freq = 145.0 - t * 120.0
+            val sub = sin(2.0 * PI * freq * t)
+            val buzz = sin(2.0 * PI * (freq * 2.5) * t) * 0.35
+            (sub + buzz) * env * 0.65
         }
     }
 
+    /** Magical 3-note crystal arpeggio for Smart Hint */
     fun playHintChime() {
-        triggerHaptic(25L, 110)
+        vibrateWaveform(longArrayOf(0, 20, 40, 25), intArrayOf(0, 110, 0, 160))
         if (!soundEnabled) return
-        playGeneratedPcm(durationSec = 0.32) { t ->
+
+        playGeneratedPcm(durationSec = 0.38) { t ->
             val note = when {
-                t < 0.10 -> 587.33 // D5
-                t < 0.20 -> 783.99 // G5
-                else -> 1046.50    // C6
+                t < 0.11 -> 659.25 // E5
+                t < 0.22 -> 830.61 // G#5
+                else -> 1174.66    // D6
             }
-            val localT = t % 0.10
-            val env = exp(-localT * 18.0)
-            sin(2.0 * PI * note * t) * env * 0.45
+            val localT = when {
+                t < 0.11 -> t
+                t < 0.22 -> t - 0.11
+                else -> t - 0.22
+            }
+            val env = exp(-localT * 15.0)
+            val shimmer = sin(2.0 * PI * note * t) * 0.65 + sin(2.0 * PI * (note * 2.0) * t) * 0.22
+            shimmer * env * 0.50
         }
     }
 
+    /** Metallic coin clink + sparkle for Store purchases */
+    fun playCoinPurchase() {
+        vibrateWaveform(longArrayOf(0, 25, 35, 45), intArrayOf(0, 160, 0, 240))
+        if (!soundEnabled) return
+
+        playGeneratedPcm(durationSec = 0.36) { t ->
+            val freq = if (t < 0.09) 987.77 else 1318.51 // B5 -> E6
+            val localT = if (t < 0.09) t else (t - 0.09)
+            val env = exp(-localT * 13.0)
+            val metallic = sin(2.0 * PI * freq * t) * 0.6 + sin(2.0 * PI * (freq * 2.41) * t) * 0.25
+            metallic * env * 0.52
+        }
+    }
+
+    /** Grand orchestral-bell victory fanfare */
     fun playLevelCompleteFanfare() {
-        triggerHaptic(90L, 255)
+        vibrateWaveform(longArrayOf(0, 45, 50, 45, 50, 110), intArrayOf(0, 180, 0, 210, 0, 255))
         if (!soundEnabled) return
-        playGeneratedPcm(durationSec = 0.65) { t ->
+
+        playGeneratedPcm(durationSec = 0.80) { t ->
             val note = when {
-                t < 0.12 -> 523.25 // C5
-                t < 0.24 -> 659.25 // E5
-                t < 0.36 -> 783.99 // G5
+                t < 0.13 -> 523.25 // C5
+                t < 0.26 -> 659.25 // E5
+                t < 0.39 -> 783.99 // G5
                 else -> 1046.50    // C6
             }
-            val localT = if (t < 0.36) (t % 0.12) else (t - 0.36)
-            val decay = if (t < 0.36) 14.0 else 5.0
+            val localT = if (t < 0.39) (t % 0.13) else (t - 0.39)
+            val decay = if (t < 0.39) 13.0 else 4.2
             val env = exp(-localT * decay)
-            val chord = sin(2.0 * PI * note * t) * 0.6 + sin(2.0 * PI * (note * 0.5) * t) * 0.3
-            chord * env * 0.55
+            val voice1 = sin(2.0 * PI * note * t) * 0.55
+            val voice2 = sin(2.0 * PI * (note * 0.5) * t) * 0.30
+            val voice3 = sin(2.0 * PI * (note * 1.25) * t) * 0.18
+            (voice1 + voice2 + voice3) * env * 0.58
         }
     }
 
+    /** Soft descending tone for Out of Lives */
     fun playGameOver() {
-        triggerHaptic(120L, 255)
+        vibrateWaveform(longArrayOf(0, 90, 60, 140), intArrayOf(0, 220, 0, 255))
         if (!soundEnabled) return
-        playGeneratedPcm(durationSec = 0.55) { t ->
+
+        playGeneratedPcm(durationSec = 0.60) { t ->
             val note = when {
-                t < 0.18 -> 392.00 // G4
-                t < 0.36 -> 349.23 // F4
+                t < 0.20 -> 392.00 // G4
+                t < 0.40 -> 349.23 // F4
                 else -> 293.66     // D4
             }
-            val localT = t % 0.18
-            val env = exp(-localT * 9.0)
+            val localT = t % 0.20
+            val env = exp(-localT * 8.5)
             sin(2.0 * PI * note * t) * env * 0.50
         }
     }
 
-    private fun triggerHaptic(durationMs: Long, amplitude: Int) {
+    private fun vibrateOneShot(durationMs: Long, amplitude: Int) {
         if (!hapticEnabled) return
         try {
             val vib = vibrator ?: return
@@ -122,6 +171,24 @@ class SoundAndHapticEngine(private val context: Context) {
             } else {
                 @Suppress("DEPRECATION")
                 vib.vibrate(durationMs)
+            }
+        } catch (_: Exception) {
+        }
+    }
+
+    private fun vibrateWaveform(timings: LongArray, amplitudes: IntArray) {
+        if (!hapticEnabled) return
+        try {
+            val vib = vibrator ?: return
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                if (vib.hasAmplitudeControl()) {
+                    vib.vibrate(VibrationEffect.createWaveform(timings, amplitudes, -1))
+                } else {
+                    vib.vibrate(VibrationEffect.createWaveform(timings, -1))
+                }
+            } else {
+                @Suppress("DEPRECATION")
+                vib.vibrate(timings, -1)
             }
         } catch (_: Exception) {
         }
@@ -158,7 +225,7 @@ class SoundAndHapticEngine(private val context: Context) {
 
                 audioTrack.write(buffer, 0, buffer.size)
                 audioTrack.play()
-                Thread.sleep((durationSec * 1000).toLong() + 40L)
+                Thread.sleep((durationSec * 1000).toLong() + 45L)
                 audioTrack.release()
             } catch (_: Exception) {
             }
