@@ -826,8 +826,8 @@ private fun VictoryScreen(
 
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Text(
-                    text = "Train
-Your Brain",
+                    text = "Train Your Brain",
+                    
                     fontSize = 34.sp,
                     fontWeight = FontWeight.ExtraBold,
                     color = Color.White,
